@@ -50,7 +50,7 @@ clock = pg.time.Clock()
 
 
 class GameObject:
-    """Родительский класс"""
+    """Базовый класс для всех игровых объектов."""
 
     def __init__(self, body_color=SNAKE_COLOR):
         self.position = SCREEN_CENTER
@@ -69,7 +69,7 @@ class GameObject:
 
 
 class Apple(GameObject):
-    """Класс описывающий яблоко."""
+    """Класс, описывающий яблоко и логику его появления."""
 
     def __init__(self, occupied_slots=None):
         """Инициализирует яблоко и задает случайную позицию."""
@@ -79,7 +79,7 @@ class Apple(GameObject):
         self.randomize_position(occupied_slots)
 
     def randomize_position(self, occupied_slots):
-        """Устанавливает случайное положение яблока на поле."""
+        """Установить случайное положение яблока на свободном игровом поле."""
         while True:
             x = randint(0, GRID_WIDTH - 1) * GRID_SIZE
             y = randint(0, GRID_HEIGHT - 1) * GRID_SIZE
@@ -89,7 +89,7 @@ class Apple(GameObject):
                 break
 
     def draw(self):
-        """Отрисовываем яблоко."""
+        """Отрисовать яблоко на игровом экране."""
         self.draw_cell(self.position)
 
 class Snake(GameObject):
@@ -108,7 +108,7 @@ class Snake(GameObject):
         return self.positions[0]
 
     def move(self):
-        """Обновляет позицию змейки."""
+        """Обновить позицию змейки, добавив новую голову и удалив хвост."""
         head_x, head_y = self.get_head_position()
         step_x, step_y = self.direction
         
@@ -126,7 +126,7 @@ class Snake(GameObject):
                 self.last = None
 
     def draw(self):
-        """Отрисовываем змейку."""
+        """Отрисовать змейку на экране, обновляя только голову и хвост."""
         if self.last:
             self.draw_cell(self.last, BOARD_BACKGROUND_COLOR, BOARD_BACKGROUND_COLOR)
         self.draw_cell(self.positions[0])
@@ -153,6 +153,7 @@ def handle_keys(snake):
 
 
 def main():
+    """Запустить основной игровой цикл."""
     snake = Snake()
     apple = Apple(snake.positions)
     
