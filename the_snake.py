@@ -24,7 +24,7 @@ BORDER_COLOR = (93, 216, 228)
 APPLE_COLOR = (255, 0, 0)
 SNAKE_COLOR = (0, 255, 0)
 
-# Словарь возможных направлений. 
+# Словарь возможных направлений.
 DIRECTIONS = {
     (LEFT, pg.K_UP): UP,
     (RIGHT, pg.K_UP): UP,
@@ -92,6 +92,7 @@ class Apple(GameObject):
         """Отрисовать яблоко на игровом экране."""
         self.draw_cell(self.position)
 
+
 class Snake(GameObject):
     """Класс описывающий змейку и ее движения."""
 
@@ -111,7 +112,6 @@ class Snake(GameObject):
         """Обновить позицию змейки, добавив новую голову и удалив хвост."""
         head_x, head_y = self.get_head_position()
         step_x, step_y = self.direction
-        
         new_x = (head_x + step_x * GRID_SIZE) % SCREEN_WIDTH
         new_y = (head_y + step_y * GRID_SIZE) % SCREEN_HEIGHT
         new_head = (new_x, new_y)
@@ -128,7 +128,11 @@ class Snake(GameObject):
     def draw(self):
         """Отрисовать змейку на экране, обновляя только голову и хвост."""
         if self.last:
-            self.draw_cell(self.last, BOARD_BACKGROUND_COLOR, BOARD_BACKGROUND_COLOR)
+            self.draw_cell(
+                self.last,
+                BOARD_BACKGROUND_COLOR,
+                BOARD_BACKGROUND_COLOR
+            )
         self.draw_cell(self.positions[0])
 
     def reset(self):
@@ -140,6 +144,7 @@ class Snake(GameObject):
         self.last = None
         screen.fill(BOARD_BACKGROUND_COLOR)
 
+
 def handle_keys(snake):
     """Обработка действий пользователя."""
     for event in pg.event.get():
@@ -147,7 +152,7 @@ def handle_keys(snake):
             pg.quit()
             raise SystemExit
         if event.type == pg.KEYDOWN:
-            new_direction = DIRECTIONS.get((snake.direction, event.key)) 
+            new_direction = DIRECTIONS.get((snake.direction, event.key))
             if new_direction:
                 snake.update_direction(new_direction)
 
@@ -156,7 +161,6 @@ def main():
     """Запустить основной игровой цикл."""
     snake = Snake()
     apple = Apple(snake.positions)
-    
     screen.fill(BOARD_BACKGROUND_COLOR)
 
     while True:
