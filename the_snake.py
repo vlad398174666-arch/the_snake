@@ -57,6 +57,7 @@ class GameObject:
         self.body_color = body_color
 
     def draw_cell(self, position, color=None, border_color=BORDER_COLOR):
+        """Отрисовывает одну ячейку на игровом поле."""
         if color is None:
             color = self.body_color
         rect = pg.Rect(position, (GRID_SIZE, GRID_SIZE))
