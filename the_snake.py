@@ -48,25 +48,30 @@ FONT_XS = pg.font.SysFont('Courier New', 18, bold=True)
 FONT_SM = pg.font.SysFont('Courier New', 24, bold=True)
 FONT_MD = pg.font.SysFont('Courier New', 36, bold=True)
 FONT_LG = pg.font.SysFont('Courier New', 56, bold=True)
+FONT_XL = pg.font.SysFont('Courier New', 80, bold=True)
 
-HIGH_SCORE_FILE = os.path.join(os.path.dirname(__file__), 'highscore.json')
+HIGH_SCORE_FILE = os.path.join(os.path.dirname(__file__), 'savegame.json')
+
+# База данных достижений
+ACHIEVEMENTS = {
+    'loser': {'title': 'ЛОХ', 'desc': 'Съесть яд в первый раз.'},
+    'millimeter': {'title': 'МИЛЛИМЕТРОВЩИК', 'desc': 'Увернуться от смерти в последний миг.'},
+    'phantom': {'title': 'ФАНТОМ', 'desc': 'Испытать силу призрачной пилюли.'},
+    'culinary': {'title': 'КУЛИНАР', 'desc': 'Довести змейку до голодной смерти ядом.'}
+}
 
 
-# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (ПИКСЕЛЬ-АРТ) ---
+# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 def draw_block(surface, color, rect):
-    """Рисует 3D-куб в стиле Minecraft."""
     pg.draw.rect(surface, color, rect)
     light = (min(255, color[0]+50), min(255, color[1]+50), min(255, color[2]+50))
     dark = (max(0, color[0]-50), max(0, color[1]-50), max(0, color[2]-50))
-
     pg.draw.line(surface, light, rect.topleft, rect.topright, 2)
     pg.draw.line(surface, light, rect.topleft, rect.bottomleft, 2)
     pg.draw.line(surface, dark, rect.bottomleft, rect.bottomright, 2)
     pg.draw.line(surface, dark, rect.topright, rect.bottomright, 2)
 
-
 def draw_icon(surface, item_type, x, y):
-    """Рисует иконку предмета для легенды и игры."""
     rect = pg.Rect(x + 2, y + 2, GRID_SIZE - 4, GRID_SIZE - 4)
     if item_type == 'apple':
         draw_block(surface, APPLE_COLOR, rect)
@@ -86,7 +91,6 @@ def draw_icon(surface, item_type, x, y):
         draw_block(surface, WALL_COLOR, pg.Rect(x, y, GRID_SIZE, GRID_SIZE))
     elif item_type == 'portal':
         pg.draw.rect(surface, PORTAL_1_COLOR, (x+2, y+2, GRID_SIZE-4, GRID_SIZE-4), 3)
-        pg.draw.rect(surface, (255, 255, 255), (x+8, y+8, GRID_SIZE-16, GRID_SIZE-16))
 
 
 # --- СИСТЕМА ЧАСТИЦ ---
@@ -163,7 +167,8 @@ class Snake:
         new_head = ((hx + sx * GRID_SIZE) % SCREEN_WIDTH, (hy + sy * GRID_SIZE) % SCREEN_HEIGHT)
 
         self.positions.insert(0, new_head)
-        if len(self.positions) > self.length:
+
+        while len(self.positions) > max(1, self.length):
             self.positions.pop()
 
     def draw(self, surface):
@@ -199,29 +204,56 @@ class Snake:
 # --- МЕНЕДЖЕР ИГРЫ ---
 class GameManager:
     def __init__(self):
-        self.display = pg.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+        self.display = pg.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pg.SCALED)
         self.canvas = pg.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
         pg.display.set_caption('Snake: Dungeon Edition')
         self.clock = pg.time.Clock()
 
         self.state = 'MENU'
-        self.menu_index = 0       # 0: Старт, 1: Настройки, 2: Выход
-        self.pause_index = 0      # 0: Продолжить, 1: Главное меню
+        self.menu_index = 0
+        self.pause_index = 0
 
-        # Настройки
-        self.settings_index = 0   # 0: Скорость, 1: Сложность, 2: Назад
-        self.speed_options = list(range(5, 26)) # От 5 до 25 включительно
-        self.curr_speed_idx = 7   # По умолчанию 12 (индекс 7)
+        self.settings_index = 0
+        self.speed_options = list(range(5, 26))
+        self.curr_speed_idx = 5   # Стартовая скорость 10 (индекс 5)
         self.diff_options = [1, 2, 3, 4]
-        self.curr_diff_idx = 2    # По умолчанию 3
+        self.curr_diff_idx = 2    # Сложность 3
 
-        self.high_score = self.load_score()
         self.particles = []
         self.shake_timer = 0
         self.portal_timer = 0
 
+        self.high_score = 0
+        self.unlocked_achievements = set()
+        self.achievement_popups = []
+        self.pill_pause_timer = 0
+        self.load_data()
+
         self.generate_dungeon_bg()
         self.reset_game()
+
+    def load_data(self):
+        try:
+            with open(HIGH_SCORE_FILE, 'r') as f:
+                data = json.load(f)
+                self.high_score = data.get('best', 0)
+                self.unlocked_achievements = set(data.get('achievements', []))
+        except:
+            self.high_score = 0
+            self.unlocked_achievements = set()
+
+    def save_data(self):
+        with open(HIGH_SCORE_FILE, 'w') as f:
+            json.dump({
+                'best': self.high_score,
+                'achievements': list(self.unlocked_achievements)
+            }, f)
+
+    def unlock_achievement(self, ach_id):
+        if ach_id not in self.unlocked_achievements:
+            self.unlocked_achievements.add(ach_id)
+            self.save_data()
+            self.achievement_popups.append({'id': ach_id, 'timer': 60})
 
     def generate_dungeon_bg(self):
         self.bg_surface = pg.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -232,14 +264,6 @@ class GameManager:
                 pg.draw.rect(self.bg_surface, color, rect)
                 pg.draw.line(self.bg_surface, (20,20,20), rect.topleft, rect.bottomleft)
                 pg.draw.line(self.bg_surface, (20,20,20), rect.topleft, rect.topright)
-
-    def load_score(self):
-        try:
-            with open(HIGH_SCORE_FILE, 'r') as f: return json.load(f).get('best', 0)
-        except: return 0
-
-    def save_score(self):
-        with open(HIGH_SCORE_FILE, 'w') as f: json.dump({'best': self.high_score}, f)
 
     def reset_game(self):
         self.score = 0
@@ -252,6 +276,7 @@ class GameManager:
         self.ghost_pill = Item(GHOST_COLOR, duration=100, item_type='ghost')
         self.walls = set()
         self.portals = []
+        self.achievement_popups.clear()
 
     def generate_level(self):
         diff = self.diff_options[self.curr_diff_idx]
@@ -277,69 +302,121 @@ class GameManager:
             self.particles.append(Particle(pos, color))
 
     def handle_events(self):
+        cx = SCREEN_WIDTH // 2
+
         for event in pg.event.get():
             if event.type == pg.QUIT:
                 pg.quit(); sys.exit()
 
-            if event.type == pg.KEYDOWN:
-                # --- ГЛАВНОЕ МЕНЮ ---
-                if self.state == 'MENU':
-                    if event.key == pg.K_UP:
-                        self.menu_index = (self.menu_index - 1) % 3
-                    elif event.key == pg.K_DOWN:
-                        self.menu_index = (self.menu_index + 1) % 3
-                    elif event.key in (pg.K_RETURN, pg.K_SPACE):
-                        if self.menu_index == 0:
-                            self.state = 'TUTORIAL' # Переход к правилам
-                        elif self.menu_index == 1:
-                            self.state = 'SETTINGS'
-                        elif self.menu_index == 2:
-                            pg.quit(); sys.exit()
+            # --- ОБРАБОТКА КЛИКОВ МЫШКОЙ ---
+            elif event.type == pg.MOUSEBUTTONDOWN and event.button == 1:
+                mouse_pos = event.pos
 
-                # --- ЭКРАН ПРАВИЛ ---
+                if self.state == 'MENU':
+                    for i in range(4):
+                        rect = pg.Rect(cx - 150, 320 + i * 55, 300, 45)
+                        if rect.collidepoint(mouse_pos):
+                            if i == 0: self.state = 'TUTORIAL'
+                            elif i == 1: self.state = 'SETTINGS'
+                            elif i == 2: self.state = 'ACHIEVEMENTS'
+                            elif i == 3: pg.quit(); sys.exit()
+
                 elif self.state == 'TUTORIAL':
-                    if event.key in (pg.K_SPACE, pg.K_RETURN, pg.K_ESCAPE):
+                    back_rect = pg.Rect(cx - 220, 580, 180, 45)
+                    start_rect = pg.Rect(cx + 40, 580, 180, 45)
+                    if back_rect.collidepoint(mouse_pos):
+                        self.state = 'MENU'
+                    elif start_rect.collidepoint(mouse_pos):
                         self.reset_game()
                         self.state = 'PLAYING'
 
-                # --- МЕНЮ НАСТРОЕК ---
                 elif self.state == 'SETTINGS':
-                    if event.key == pg.K_UP:
-                        self.settings_index = (self.settings_index - 1) % 3
-                    elif event.key == pg.K_DOWN:
-                        self.settings_index = (self.settings_index + 1) % 3
+                    speed_rect = pg.Rect(cx - 250, 300, 500, 45)
+                    diff_rect = pg.Rect(cx - 250, 360, 500, 45)
+                    back_rect = pg.Rect(cx - 150, 420, 300, 45)
 
-                    elif event.key == pg.K_LEFT:
+                    if speed_rect.collidepoint(mouse_pos):
+                        self.curr_speed_idx = (self.curr_speed_idx + 1) % len(self.speed_options)
+                    elif diff_rect.collidepoint(mouse_pos):
+                        self.curr_diff_idx = (self.curr_diff_idx + 1) % len(self.diff_options)
+                    elif back_rect.collidepoint(mouse_pos):
+                        self.state = 'MENU'
+
+                elif self.state == 'ACHIEVEMENTS':
+                    back_rect = pg.Rect(cx - 150, 600, 300, 45)
+                    if back_rect.collidepoint(mouse_pos):
+                        self.state = 'MENU'
+
+                elif self.state == 'PAUSED':
+                    resume_rect = pg.Rect(cx - 160, 380, 320, 45)
+                    menu_rect = pg.Rect(cx - 160, 430, 320, 45)
+                    if resume_rect.collidepoint(mouse_pos):
+                        self.state = 'PLAYING'
+                    elif menu_rect.collidepoint(mouse_pos):
+                        self.state = 'MENU'
+
+                elif self.state == 'GAME_OVER':
+                    restart_rect = pg.Rect(cx - 200, 440, 400, 45)
+                    if restart_rect.collidepoint(mouse_pos):
+                        self.reset_game()
+                        self.state = 'PLAYING'
+
+            # --- ОБРАБОТКА КЛАВИАТУРЫ ---
+            elif event.type == pg.KEYDOWN:
+                if self.state == 'MENU':
+                    if event.key in (pg.K_UP, pg.K_w):
+                        self.menu_index = (self.menu_index - 1) % 4
+                    elif event.key in (pg.K_DOWN, pg.K_s):
+                        self.menu_index = (self.menu_index + 1) % 4
+                    elif event.key in (pg.K_RETURN, pg.K_SPACE):
+                        if self.menu_index == 0: self.state = 'TUTORIAL'
+                        elif self.menu_index == 1: self.state = 'SETTINGS'
+                        elif self.menu_index == 2: self.state = 'ACHIEVEMENTS'
+                        elif self.menu_index == 3: pg.quit(); sys.exit()
+
+                elif self.state == 'TUTORIAL':
+                    if event.key == pg.K_ESCAPE:
+                        self.state = 'MENU'
+                    elif event.key in (pg.K_SPACE, pg.K_RETURN):
+                        self.reset_game()
+                        self.state = 'PLAYING'
+
+                elif self.state == 'SETTINGS':
+                    if event.key in (pg.K_UP, pg.K_w):
+                        self.settings_index = (self.settings_index - 1) % 3
+                    elif event.key in (pg.K_DOWN, pg.K_s):
+                        self.settings_index = (self.settings_index + 1) % 3
+                    elif event.key in (pg.K_LEFT, pg.K_a):
                         if self.settings_index == 0:
                             self.curr_speed_idx = (self.curr_speed_idx - 1) % len(self.speed_options)
                         elif self.settings_index == 1:
                             self.curr_diff_idx = (self.curr_diff_idx - 1) % len(self.diff_options)
-
-                    elif event.key == pg.K_RIGHT:
+                    elif event.key in (pg.K_RIGHT, pg.K_d):
                         if self.settings_index == 0:
                             self.curr_speed_idx = (self.curr_speed_idx + 1) % len(self.speed_options)
                         elif self.settings_index == 1:
                             self.curr_diff_idx = (self.curr_diff_idx + 1) % len(self.diff_options)
-
                     elif event.key in (pg.K_RETURN, pg.K_SPACE, pg.K_ESCAPE):
                         if self.settings_index == 2 or event.key == pg.K_ESCAPE:
                             self.state = 'MENU'
 
-                # --- ИГРА ---
+                elif self.state == 'ACHIEVEMENTS':
+                    if event.key in (pg.K_ESCAPE, pg.K_SPACE, pg.K_RETURN):
+                        self.state = 'MENU'
+
                 elif self.state == 'PLAYING':
                     if event.key in (pg.K_ESCAPE, pg.K_SPACE):
                         self.state = 'PAUSED'
                         self.pause_index = 0
-                    elif event.key == pg.K_UP: self.snake.update_direction(UP)
-                    elif event.key == pg.K_DOWN: self.snake.update_direction(DOWN)
-                    elif event.key == pg.K_LEFT: self.snake.update_direction(LEFT)
-                    elif event.key == pg.K_RIGHT: self.snake.update_direction(RIGHT)
+                    elif event.key in (pg.K_UP, pg.K_w): self.snake.update_direction(UP)
+                    elif event.key in (pg.K_DOWN, pg.K_s): self.snake.update_direction(DOWN)
+                    elif event.key in (pg.K_LEFT, pg.K_a): self.snake.update_direction(LEFT)
+                    elif event.key in (pg.K_RIGHT, pg.K_d): self.snake.update_direction(RIGHT)
 
-                # --- ПАУЗА ---
                 elif self.state == 'PAUSED':
-                    if event.key == pg.K_UP:
+                    if event.key in (pg.K_UP, pg.K_w):
                         self.pause_index = (self.pause_index - 1) % 2
-                    elif event.key == pg.K_DOWN:
+                    elif event.key in (pg.K_DOWN, pg.K_s):
                         self.pause_index = (self.pause_index + 1) % 2
                     elif event.key in (pg.K_RETURN, pg.K_SPACE):
                         if self.pause_index == 0:
@@ -349,7 +426,6 @@ class GameManager:
                     elif event.key == pg.K_ESCAPE:
                         self.state = 'PLAYING'
 
-                # --- GAME OVER ---
                 elif self.state == 'GAME_OVER':
                     if event.key == pg.K_SPACE:
                         self.reset_game()
@@ -358,6 +434,12 @@ class GameManager:
                         self.state = 'MENU'
 
     def update(self):
+        if self.state == 'PILL_PAUSE':
+            self.pill_pause_timer -= 1
+            if self.pill_pause_timer <= 0:
+                self.state = 'PLAYING'
+            return
+
         if self.state != 'PLAYING': return
 
         self.golden.update()
@@ -370,12 +452,33 @@ class GameManager:
             if self.snake.ghost_timer <= 0:
                 self.snake.is_ghost = False
 
+        # --- Проверка достижения "МИЛЛИМЕТРОВЩИК" ---
+        if self.snake.dir_queue:
+            head_x, head_y = self.snake.positions[0]
+            old_dx, old_dy = self.snake.direction
+            next_dx, next_dy = self.snake.dir_queue[0]
+
+            crash_pos = ((head_x + old_dx * GRID_SIZE) % SCREEN_WIDTH, (head_y + old_dy * GRID_SIZE) % SCREEN_HEIGHT)
+
+            occupied_by_death = list(self.walls)
+            if not self.snake.is_ghost:
+                occupied_by_death += self.snake.positions[1:]
+
+            if crash_pos in occupied_by_death:
+                safe_pos = ((head_x + next_dx * GRID_SIZE) % SCREEN_WIDTH, (head_y + next_dy * GRID_SIZE) % SCREEN_HEIGHT)
+                if safe_pos not in occupied_by_death:
+                    self.unlock_achievement('millimeter')
+
         self.snake.move()
         head = self.snake.positions[0]
         occupied = self.snake.positions + list(self.walls) + self.portals
         diff = self.diff_options[self.curr_diff_idx]
 
-        # 1. Сбор яблока
+        # Динамический спавн яда
+        if diff >= 2:
+            if not self.poison.active and random() < 0.015:
+                self.poison.spawn(occupied)
+
         if head == self.apple.position:
             self.snake.length += 1
             self.score += 1
@@ -384,14 +487,10 @@ class GameManager:
 
             if diff >= 3: self.generate_level()
 
-            # Спавн лута в зависимости от сложности
             if diff >= 3:
                 if not self.golden.active and random() < 0.15: self.golden.spawn(occupied)
                 if not self.ghost_pill.active and random() < 0.05: self.ghost_pill.spawn(occupied)
-            if diff >= 2:
-                if not self.poison.active and random() < 0.1: self.poison.spawn(occupied)
 
-        # 2. Золотое яблоко
         if self.golden.active and head == self.golden.position:
             self.snake.length += 2
             self.score += 3
@@ -399,20 +498,31 @@ class GameManager:
             self.shake_timer = 10
             self.spawn_particles(head, GOLD_COLOR, 30)
 
-        # 3. Яд
         if self.poison.active and head == self.poison.position:
-            self.snake.length = max(3, self.snake.length - 1)
+            self.snake.length -= 1
             self.poison.active = False
             self.spawn_particles(head, POISON_COLOR)
+            self.unlock_achievement('loser')
 
-        # 4. Призрак
+            if self.snake.length <= 0:
+                self.unlock_achievement('culinary')
+                self.state = 'GAME_OVER'
+                self.shake_timer = 20
+                if self.score > self.high_score:
+                    self.high_score = self.score
+                    self.save_data()
+                return
+
         if self.ghost_pill.active and head == self.ghost_pill.position:
             self.snake.is_ghost = True
             self.snake.ghost_timer = 100
             self.ghost_pill.active = False
             self.spawn_particles(head, GHOST_COLOR)
+            self.unlock_achievement('phantom')
 
-        # 5. Порталы
+            self.state = 'PILL_PAUSE'
+            self.pill_pause_timer = 24
+
         if self.portals:
             if head == self.portals[0]:
                 self.snake.positions[0] = self.portals[1]
@@ -421,7 +531,6 @@ class GameManager:
                 self.snake.positions[0] = self.portals[0]
                 self.spawn_particles(self.portals[1], PORTAL_2_COLOR)
 
-        # 6. Смерть
         hit_wall = head in self.walls
         hit_tail = head in self.snake.positions[1:] and not self.snake.is_ghost
 
@@ -430,10 +539,9 @@ class GameManager:
             self.shake_timer = 20
             if self.score > self.high_score:
                 self.high_score = self.score
-                self.save_score()
+                self.save_data()
 
     def draw(self):
-        # Отрисовка фона и объектов игры
         self.canvas.blit(self.bg_surface, (0, 0))
         for wall in self.walls:
             rect = pg.Rect(wall, (GRID_SIZE, GRID_SIZE))
@@ -451,15 +559,19 @@ class GameManager:
         self.golden.draw(self.canvas)
         self.poison.draw(self.canvas)
         self.ghost_pill.draw(self.canvas)
-        self.snake.draw(self.canvas)
+
+        if self.state == 'PILL_PAUSE':
+            if (self.pill_pause_timer // 4) % 2 == 0:
+                self.snake.draw(self.canvas)
+        elif self.state != 'GAME_OVER' or self.snake.length > 0:
+            self.snake.draw(self.canvas)
 
         for p in self.particles[:]:
             p.update()
             p.draw(self.canvas)
             if p.life <= 0: self.particles.remove(p)
 
-        # Игровой UI
-        if self.state in ['PLAYING', 'PAUSED']:
+        if self.state in ['PLAYING', 'PAUSED', 'PILL_PAUSE']:
             score_t = FONT_SM.render(f'СЧЕТ: {self.score}', True, (255,255,255))
             hi_t = FONT_SM.render(f'РЕКОРД: {self.high_score}', True, GOLD_COLOR)
             lvl_t = FONT_SM.render(f'СЛОЖНОСТЬ: {self.diff_options[self.curr_diff_idx]}', True, (150,150,150))
@@ -467,8 +579,14 @@ class GameManager:
             self.canvas.blit(hi_t, (SCREEN_WIDTH - hi_t.get_width() - 20, 20))
             self.canvas.blit(lvl_t, (SCREEN_WIDTH//2 - lvl_t.get_width()//2, 20))
 
-        # ОВЕРЛЕИ И МЕНЮ
-        if self.state != 'PLAYING':
+        if self.state == 'PILL_PAUSE':
+            dark = pg.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pg.SRCALPHA)
+            dark.fill((0, 0, 0, 150))
+            self.canvas.blit(dark, (0, 0))
+            pill_text = FONT_XL.render('ПИЛЮЛЯ', True, GHOST_COLOR)
+            self.canvas.blit(pill_text, (SCREEN_WIDTH//2 - pill_text.get_width()//2, SCREEN_HEIGHT//2 - pill_text.get_height()//2))
+
+        if self.state not in ['PLAYING', 'PILL_PAUSE']:
             dark = pg.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pg.SRCALPHA)
             dark.fill((0, 0, 0, 200))
             self.canvas.blit(dark, (0, 0))
@@ -479,16 +597,16 @@ class GameManager:
                 title = FONT_LG.render('SNAKE: DUNGEON', True, SNAKE_HEAD_COLOR)
                 self.canvas.blit(title, (cx - title.get_width()//2, 200))
 
-                menu_items = ['ИГРАТЬ', 'НАСТРОЙКИ', 'ВЫХОД']
+                menu_items = ['ИГРАТЬ', 'НАСТРОЙКИ', 'ДОСТИЖЕНИЯ', 'ВЫХОД']
                 for i, item in enumerate(menu_items):
                     color = TEXT_ACTIVE if i == self.menu_index else TEXT_NORMAL
                     prefix = "> " if i == self.menu_index else "  "
                     text = FONT_MD.render(f'{prefix}{item}', True, color)
-                    self.canvas.blit(text, (cx - 100, 350 + i * 50))
+                    self.canvas.blit(text, (cx - 150, 320 + i * 55))
 
             elif self.state == 'TUTORIAL':
                 title = FONT_MD.render('ПРАВИЛА И БОНУСЫ', True, GOLD_COLOR)
-                self.canvas.blit(title, (cx - title.get_width()//2, 100))
+                self.canvas.blit(title, (cx - title.get_width()//2, 80))
 
                 rules = [
                     ('apple', 'ОБЫЧНОЕ ЯБЛОКО: +1 очко и +1 длина.'),
@@ -500,12 +618,22 @@ class GameManager:
                 ]
 
                 for i, (icon, text) in enumerate(rules):
-                    draw_icon(self.canvas, icon, cx - 350, 180 + i * 60)
+                    draw_icon(self.canvas, icon, cx - 360, 150 + i * 55)
                     t_surf = FONT_SM.render(text, True, (220, 220, 220))
-                    self.canvas.blit(t_surf, (cx - 310, 180 + i * 60))
+                    self.canvas.blit(t_surf, (cx - 320, 150 + i * 55))
 
-                sub = FONT_SM.render('НАЖМИ [ПРОБЕЛ] ДЛЯ СТАРТА', True, TEXT_ACTIVE)
-                self.canvas.blit(sub, (cx - sub.get_width()//2, 600))
+                # Рендер кнопок НАЗАД и СТАРТ
+                back_rect = pg.Rect(cx - 220, 580, 180, 45)
+                start_rect = pg.Rect(cx + 40, 580, 180, 45)
+
+                draw_block(self.canvas, (60, 60, 60), back_rect)
+                draw_block(self.canvas, (34, 139, 34), start_rect)
+
+                back_t = FONT_SM.render('НАЗАД', True, (255, 255, 255))
+                start_t = FONT_SM.render('СТАРТ', True, (255, 255, 255))
+
+                self.canvas.blit(back_t, (back_rect.centerx - back_t.get_width()//2, back_rect.centery - back_t.get_height()//2))
+                self.canvas.blit(start_t, (start_rect.centerx - start_t.get_width()//2, start_rect.centery - start_t.get_height()//2))
 
             elif self.state == 'SETTINGS':
                 title = FONT_LG.render('НАСТРОЙКИ', True, SNAKE_HEAD_COLOR)
@@ -533,6 +661,25 @@ class GameManager:
                 desc_text = FONT_SM.render(diff_desc[self.curr_diff_idx], True, GOLD_COLOR)
                 self.canvas.blit(desc_text, (cx - desc_text.get_width()//2, 550))
 
+            elif self.state == 'ACHIEVEMENTS':
+                title = FONT_LG.render('ДОСТИЖЕНИЯ', True, GOLD_COLOR)
+                self.canvas.blit(title, (cx - title.get_width()//2, 80))
+
+                start_y = 180
+                for i, (ach_id, ach) in enumerate(ACHIEVEMENTS.items()):
+                    if ach_id in self.unlocked_achievements:
+                        name_t = FONT_MD.render(ach['title'], True, TEXT_ACTIVE)
+                        desc_t = FONT_SM.render(ach['desc'], True, TEXT_NORMAL)
+                    else:
+                        name_t = FONT_MD.render("???", True, (100, 100, 100))
+                        desc_t = FONT_SM.render("Секретное достижение", True, (80, 80, 80))
+
+                    self.canvas.blit(name_t, (cx - 380, start_y + i * 95))
+                    self.canvas.blit(desc_t, (cx - 380, start_y + 40 + i * 95))
+
+                back_t = FONT_MD.render('[ НАЗАД ]', True, TEXT_ACTIVE)
+                self.canvas.blit(back_t, (cx - back_t.get_width()//2, 600))
+
             elif self.state == 'PAUSED':
                 title = FONT_LG.render('ПАУЗА', True, (255, 255, 255))
                 self.canvas.blit(title, (cx - title.get_width()//2, 250))
@@ -542,7 +689,7 @@ class GameManager:
                     color = TEXT_ACTIVE if i == self.pause_index else TEXT_NORMAL
                     prefix = "> " if i == self.pause_index else "  "
                     text = FONT_MD.render(f'{prefix}{item}', True, color)
-                    self.canvas.blit(text, (cx - 150, 380 + i * 50))
+                    self.canvas.blit(text, (cx - 160, 380 + i * 50))
 
             elif self.state == 'GAME_OVER':
                 title = FONT_LG.render('ПОТРАЧЕНО', True, APPLE_COLOR)
@@ -553,7 +700,28 @@ class GameManager:
                 self.canvas.blit(score_text, (cx - score_text.get_width()//2, 360))
                 self.canvas.blit(sub, (cx - sub.get_width()//2, 450))
 
-        # Тряска экрана
+        for i, popup in enumerate(self.achievement_popups):
+            popup['timer'] -= 1
+            if popup['timer'] <= 0:
+                continue
+
+            ach = ACHIEVEMENTS[popup['id']]
+            text = FONT_SM.render(f"[*] ДОСТИЖЕНИЕ: {ach['title']}", True, GOLD_COLOR)
+
+            box_w = text.get_width() + 40
+            box_h = 50
+            box_x = cx - box_w // 2
+            box_y = 20 + i * 60
+
+            if popup['timer'] > 50:
+                box_y -= (popup['timer'] - 50) * 8
+
+            pg.draw.rect(self.canvas, (20, 20, 20), (box_x, box_y, box_w, box_h), border_radius=10)
+            pg.draw.rect(self.canvas, GOLD_COLOR, (box_x, box_y, box_w, box_h), 2, border_radius=10)
+            self.canvas.blit(text, (box_x + 20, box_y + 12))
+
+        self.achievement_popups = [p for p in self.achievement_popups if p['timer'] > 0]
+
         render_offset = (0, 0)
         if self.shake_timer > 0:
             self.shake_timer -= 1
